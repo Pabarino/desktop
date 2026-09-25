@@ -45,10 +45,6 @@ void ProxyAuthHandler::handleProxyAuthenticationRequired(
     const QNetworkProxy &proxy,
     QAuthenticator *authenticator)
 {
-    if (!_dialog) {
-        return;
-    }
-
     const auto account = qobject_cast<Account *>(sender());
     const auto key = QString{proxy.hostName() + QLatin1Char(':') + QString::number(proxy.port())};
 
@@ -59,18 +55,9 @@ void ProxyAuthHandler::handleProxyAuthenticationRequired(
         _password.clear();
         _blocked = false;
         _gaveCredentialsTo.clear();
-
-        // If the user explicitly configured the proxy in the
-        // network settings, don't ask about it.
-        if ((account && (account->proxyType() == QNetworkProxy::HttpProxy
-                         || account->proxyType() == QNetworkProxy::Socks5Proxy))
-            || _configFile->proxyType() == QNetworkProxy::HttpProxy
-            || _configFile->proxyType() == QNetworkProxy::Socks5Proxy) {
-            _blocked = true;
-        }
     }
 
-    if (_blocked) {
+    if (_blocked || (account && _blockedAccounts.contains(account))) {
         return;
     }
 
@@ -103,6 +90,41 @@ void ProxyAuthHandler::handleProxyAuthenticationRequired(
         _gaveCredentialsTo.clear();
     }
 
+    if (account && account->proxyNeedsAuth() && !account->proxyUser().isEmpty()) {
+        if (invalidated) {
+            qCWarning(lcProxy) << "Explicit proxy credentials failed for" << key;
+            _blockedAccounts.insert(account);
+            connect(account, &QObject::destroyed, this, &ProxyAuthHandler::slotSenderDestroyed, Qt::UniqueConnection);
+            return;
+        }
+
+        qCInfo(lcProxy) << "got creds from account for" << _proxy;
+        authenticator->setUser(account->proxyUser());
+        authenticator->setPassword(account->proxyPassword());
+        if (sending_qnam) {
+            _gaveCredentialsTo.insert(sending_qnam);
+            connect(sending_qnam, &QObject::destroyed, this, &ProxyAuthHandler::slotSenderDestroyed, Qt::UniqueConnection);
+        }
+        return;
+    }
+
+    // If the user explicitly configured the proxy in the
+    // network settings, don't ask about it.
+    if ((account && (account->proxyType() == QNetworkProxy::HttpProxy || account->proxyType() == QNetworkProxy::Socks5Proxy))
+        || _configFile->proxyType() == QNetworkProxy::HttpProxy || _configFile->proxyType() == QNetworkProxy::Socks5Proxy) {
+        if (account) {
+            _blockedAccounts.insert(account);
+            connect(account, &QObject::destroyed, this, &ProxyAuthHandler::slotSenderDestroyed, Qt::UniqueConnection);
+        } else {
+            _blocked = true;
+        }
+        return;
+    }
+
+    if (!_dialog) {
+        return;
+    }
+
     if (_username.isEmpty() || _waitingForKeychain) {
         if (invalidated || !getCredsFromKeychain()) {
             if (getCredsFromDialog()) {
@@ -120,14 +142,28 @@ void ProxyAuthHandler::handleProxyAuthenticationRequired(
     authenticator->setPassword(_password);
     if (sending_qnam) {
         _gaveCredentialsTo.insert(sending_qnam);
-        connect(sending_qnam, &QObject::destroyed,
-            this, &ProxyAuthHandler::slotSenderDestroyed);
+        connect(sending_qnam, &QObject::destroyed, this, &ProxyAuthHandler::slotSenderDestroyed, Qt::UniqueConnection);
     }
 }
- 
+
+void ProxyAuthHandler::resetProxyState()
+{
+    if (const auto senderObj = sender()) {
+        _blockedAccounts.remove(senderObj);
+    } else {
+        _blockedAccounts.clear();
+    }
+    _proxy.clear();
+    _username.clear();
+    _password.clear();
+    _blocked = false;
+    _gaveCredentialsTo.clear();
+}
+
 void ProxyAuthHandler::slotSenderDestroyed(QObject *obj)
 {
     _gaveCredentialsTo.remove(obj);
+    _blockedAccounts.remove(obj);
 }
 
 bool ProxyAuthHandler::getCredsFromDialog()

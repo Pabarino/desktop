@@ -394,6 +394,9 @@ public:
     [[nodiscard]] QString proxyPassword() const;
     void setProxyPassword(const QString &password);
 
+    [[nodiscard]] QNetworkProxy proxy() const;
+    void applyProxy();
+
     void setProxySettings(const QNetworkProxy::ProxyType proxyType,
                           const QString &proxyHostName,
                           const int proxyPort,

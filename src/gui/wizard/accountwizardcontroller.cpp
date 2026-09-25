@@ -787,10 +787,12 @@ void AccountWizardController::startServerCheck(const QUrl &serverUrl)
     setBusy(true);
     setAuthStatusText(tr("Checking server address") + QStringLiteral("…"));
 
-    if (proxySettingsAvailable() && (ClientProxy::isUsingSystemDefault() || _account->proxyType() == QNetworkProxy::DefaultProxy)) {
+    if (proxySettingsAvailable() && _account->proxyType() == QNetworkProxy::DefaultProxy) {
         ClientProxy::lookupSystemProxyAsync(_account->url(), this, SLOT(slotSystemProxyLookupDone(QNetworkProxy)));
     } else {
-        _account->networkAccessManager()->setProxy(QNetworkProxy(proxySettingsAvailable() ? QNetworkProxy::DefaultProxy : QNetworkProxy::NoProxy));
+        if (!proxySettingsAvailable()) {
+            _account->networkAccessManager()->setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+        }
         QMetaObject::invokeMethod(this, "slotFindServer", Qt::QueuedConnection);
     }
 }

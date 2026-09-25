@@ -286,14 +286,10 @@ void Account::setCredentials(AbstractCredentials *cred)
 {
     // set active credential manager
     QNetworkCookieJar *jar = nullptr;
-    QNetworkProxy proxy;
 
     if (_networkAccessManager) {
         jar = _networkAccessManager->cookieJar();
         jar->setParent(nullptr);
-
-        // Remember proxy (issue #2108)
-        proxy = _networkAccessManager->proxy();
 
         _networkAccessManager = QSharedPointer<QNetworkAccessManager>();
     }
@@ -311,9 +307,7 @@ void Account::setCredentials(AbstractCredentials *cred)
     if (jar) {
         _networkAccessManager->setCookieJar(jar);
     }
-    if (proxy.type() != QNetworkProxy::DefaultProxy) {
-        _networkAccessManager->setProxy(proxy);
-    }
+    applyProxy();
     connect(_networkAccessManager.data(), &QNetworkAccessManager::sslErrors,
         this, &Account::slotHandleSslErrors);
     connect(_networkAccessManager.data(), &QNetworkAccessManager::proxyAuthenticationRequired,
@@ -1376,14 +1370,7 @@ void Account::setProxyType(QNetworkProxy::ProxyType proxyType)
     }
 
     _proxyType = proxyType;
-
-    auto proxy = _networkAccessManager->proxy();
-    proxy.setType(proxyType);
-    proxy.setHostName(proxyHostName());
-    proxy.setPort(proxyPort());
-    proxy.setUser(proxyUser());
-    proxy.setPassword(proxyPassword());
-    _networkAccessManager->setProxy(proxy);
+    applyProxy();
 
     Q_EMIT proxyTypeChanged();
 }
@@ -1400,10 +1387,7 @@ void Account::setProxyHostName(const QString &hostName)
     }
 
     _proxyHostName = hostName;
-
-    auto proxy = _networkAccessManager->proxy();
-    proxy.setHostName(hostName);
-    _networkAccessManager->setProxy(proxy);
+    applyProxy();
 
     Q_EMIT proxyHostNameChanged();
 }
@@ -1420,10 +1404,7 @@ void Account::setProxyPort(const int port)
     }
 
     _proxyPort = port;
-
-    auto proxy = _networkAccessManager->proxy();
-    proxy.setPort(port);
-    _networkAccessManager->setProxy(proxy);
+    applyProxy();
 
     Q_EMIT proxyPortChanged();
 }
@@ -1440,6 +1421,8 @@ void Account::setProxyNeedsAuth(const bool needsAuth)
     }
 
     _proxyNeedsAuth = needsAuth;
+    applyProxy();
+
     Q_EMIT proxyNeedsAuthChanged();
 }
 
@@ -1455,10 +1438,7 @@ void Account::setProxyUser(const QString &user)
     }
 
     _proxyUser = user;
-
-    auto proxy = _networkAccessManager->proxy();
-    proxy.setUser(user);
-    _networkAccessManager->setProxy(proxy);
+    applyProxy();
 
     Q_EMIT proxyUserChanged();
 }
@@ -1475,12 +1455,28 @@ void Account::setProxyPassword(const QString &password)
     }
 
     _proxyPassword = password;
-
-    auto proxy = _networkAccessManager->proxy();
-    proxy.setPassword(password);
-    _networkAccessManager->setProxy(proxy);
+    applyProxy();
 
     Q_EMIT proxyPasswordChanged();
+}
+
+QNetworkProxy Account::proxy() const
+{
+    auto p = QNetworkProxy{_proxyType, _proxyHostName, static_cast<quint16>(_proxyPort)};
+    if (_proxyNeedsAuth) {
+        p.setUser(_proxyUser);
+        p.setPassword(_proxyPassword);
+    }
+    return p;
+}
+
+void Account::applyProxy()
+{
+    if (_networkAccessManager) {
+        _networkAccessManager->setProxy(proxy());
+    }
+
+    Q_EMIT networkProxySettingChanged();
 }
 
 void Account::setProxySettings(const QNetworkProxy::ProxyType proxyType,

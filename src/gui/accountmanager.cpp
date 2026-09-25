@@ -656,13 +656,18 @@ AccountPtr AccountManager::loadAccountHelper(QSettings &settings)
         : Theme::instance()->appName();
     const auto job = new QKeychain::ReadPasswordJob(appName, this);
     job->setKey(proxyPasswordKey);
-    connect(job, &QKeychain::Job::finished, this, [acc](const QKeychain::Job *const incomingJob) {
+    connect(job, &QKeychain::Job::finished, this, [this, acc](const QKeychain::Job *const incomingJob) {
         const auto incomingReadJob = qobject_cast<const QKeychain::ReadPasswordJob *>(incomingJob);
         if (incomingReadJob->error() == QKeychain::NoError) {
             qCInfo(lcAccountManager) << "Read proxy password to keychain for" << acc->userIdAtHostWithPort();
             const auto passwordData = incomingReadJob->binaryData();
             const auto password = QString::fromUtf8(passwordData);
             acc->setProxyPassword(password);
+            if (const auto accountState = accountFromUserId(acc->userIdAtHostWithPort())) {
+                if (!accountState->isConnected()) {
+                    accountState->freshConnectionAttempt();
+                }
+            }
         } else {
             qCWarning(lcAccountManager) << "Failed to read proxy password to keychain" << incomingJob->errorString();
         }
@@ -853,6 +858,7 @@ AccountPtr AccountManager::createAccount()
     if (qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
         connect(acc.data(), &Account::proxyAuthenticationRequired,
             ProxyAuthHandler::instance(), &ProxyAuthHandler::handleProxyAuthenticationRequired);
+        connect(acc.data(), &Account::networkProxySettingChanged, ProxyAuthHandler::instance(), &ProxyAuthHandler::resetProxyState);
         if (Systray::instance()) {
             connect(acc.data(), &Account::lockFileError,
                 Systray::instance(), &Systray::showErrorMessageDialog);

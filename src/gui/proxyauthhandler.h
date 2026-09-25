@@ -47,6 +47,7 @@ public Q_SLOTS:
     /// Intended for QNetworkAccessManager::proxyAuthenticationRequired()
     void handleProxyAuthenticationRequired(const QNetworkProxy &proxy,
         QAuthenticator *authenticator);
+    void resetProxyState();
 
 private Q_SLOTS:
     void slotSenderDestroyed(QObject *);
@@ -104,6 +105,10 @@ private:
     /// failing for an existing QNAM, we keep track of the senders of the
     /// proxyAuthRequired signal here.
     QSet<QObject *> _gaveCredentialsTo;
+
+    /// Accounts whose proxy credentials have failed and are blocked from
+    /// retrying until their proxy settings or credentials change.
+    QSet<QObject *> _blockedAccounts;
 };
 
 } // namespace OCC
